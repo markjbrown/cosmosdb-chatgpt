@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using cosmosdb_chatgpt.Models;
 using Microsoft.Azure.Cosmos;
 using Newtonsoft.Json;
 
@@ -16,11 +17,11 @@ namespace cosmosdb_chatgpt.Services
         public CosmosService(IConfiguration configuration)
         {
             
-            string uri = configuration["CosmosUri"];
-            string key = configuration["CosmosKey"];
+            string uri = configuration["CosmosDb.Endpoint"];
+            string key = configuration["CosmosDb.Key"];
 
-            databaseId = configuration["CosmosDatabase"];
-            containerId = configuration["CosmosContainer"];
+            databaseId = configuration["CosmosDb.Database"];
+            containerId = configuration["CosmosDb.Container"];
 
             cosmosClient = new CosmosClient(uri, key);
 
@@ -31,10 +32,10 @@ namespace cosmosdb_chatgpt.Services
         
         // First call is made to this when chat page is loaded for left-hand nav.
         // Only retrieve the chat sessions, not chat messages
-        public async Task<List<ChatSession>> GetChatSessionsAsync()
+        public async Task<List<CosmosChatSession>> GetChatSessionsAsync()
         {
 
-            List<ChatSession> chatSessions = new();
+            List<CosmosChatSession> chatSessions = new();
 
             try 
             { 
@@ -42,15 +43,13 @@ namespace cosmosdb_chatgpt.Services
                 QueryDefinition query = new QueryDefinition("SELECT DISTINCT c.id, c.Type, c.ChatSessionId, c.ChatSessionName FROM c WHERE c.Type = @Type")
                     .WithParameter("@Type", "ChatSession");
 
-                FeedIterator<ChatSession> results = chatContainer.GetItemQueryIterator<ChatSession>(query);
+                FeedIterator<CosmosChatSession> results = chatContainer.GetItemQueryIterator<CosmosChatSession>(query);
 
                 while (results.HasMoreResults)
                 {
-                    FeedResponse<ChatSession> response = await results.ReadNextAsync();
-                    foreach (ChatSession chatSession in response)
-                    {
-                        chatSessions.Add(chatSession);
-                    }
+                    FeedResponse<CosmosChatSession> response = await results.ReadNextAsync();
+
+                    chatSessions.AddRange(response);
                 
                 }
             }
@@ -59,7 +58,7 @@ namespace cosmosdb_chatgpt.Services
                 //if 404, first run, create a new default chat session.
                 if (ce.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
-                    ChatSession chatSession = new ChatSession();
+                    CosmosChatSession chatSession = new CosmosChatSession();
                     await InsertChatSessionAsync(chatSession);
                     chatSessions.Add(chatSession);
                 }
@@ -70,14 +69,14 @@ namespace cosmosdb_chatgpt.Services
 
         }
 
-        public async Task<ChatSession> InsertChatSessionAsync(ChatSession chatSession)
+        public async Task<CosmosChatSession> InsertChatSessionAsync(CosmosChatSession chatSession)
         {
 
-            return await chatContainer.CreateItemAsync<ChatSession>(chatSession, new PartitionKey(chatSession.ChatSessionId));
+            return await chatContainer.CreateItemAsync<CosmosChatSession>(chatSession, new PartitionKey(chatSession.ChatSessionId));
 
         }
 
-        public async Task<ChatSession> UpdateChatSessionAsync(ChatSession chatSession)
+        public async Task<CosmosChatSession> UpdateChatSessionAsync(CosmosChatSession chatSession)
         {
 
             return await chatContainer.ReplaceItemAsync(item: chatSession, id: chatSession.Id, partitionKey: new PartitionKey(chatSession.ChatSessionId));
@@ -92,14 +91,14 @@ namespace cosmosdb_chatgpt.Services
                     .WithParameter("@chatSessionId", chatSessionId);
 
 
-            FeedIterator<ChatMessage> results = chatContainer.GetItemQueryIterator<ChatMessage>(query);
+            FeedIterator<CosmosChatMessage> results = chatContainer.GetItemQueryIterator<CosmosChatMessage>(query);
 
 
             List<Task> deleteTasks = new List<Task>();
 
             while (results.HasMoreResults)
             {
-                FeedResponse<ChatMessage> response = await results.ReadNextAsync();
+                FeedResponse<CosmosChatMessage> response = await results.ReadNextAsync();
                 
                 foreach (var item in response)
                 {
@@ -114,14 +113,27 @@ namespace cosmosdb_chatgpt.Services
  
         }
 
-        public async Task<ChatMessage> InsertChatMessageAsync(ChatMessage chatMessage)
+        public async Task<CosmosChatMessage> InsertChatMessageAsync(CosmosChatMessage chatMessage)
         {
 
-            return await chatContainer.CreateItemAsync<ChatMessage>(chatMessage, new PartitionKey(chatMessage.ChatSessionId));
+            return await chatContainer.CreateItemAsync<CosmosChatMessage>(chatMessage, new PartitionKey(chatMessage.ChatSessionId));
             
         }
 
-        public async Task<List<ChatMessage>> GetChatSessionMessagesAsync(string chatSessionId)
+        public async Task<List<CosmosChatMessage>> InsertChatMessagesBatchAsync(List<CosmosChatMessage> cosmosChatMessages)
+        {
+
+           TransactionalBatchResponse messagesBatch = await chatContainer.CreateTransactionalBatch(new PartitionKey(cosmosChatMessages[0].ChatSessionId))
+                .CreateItem(cosmosChatMessages[0])
+                .CreateItem(cosmosChatMessages[1])
+                .ExecuteAsync();
+
+            
+            return cosmosChatMessages;
+            
+        }
+
+        public async Task<List<CosmosChatMessage>> GetChatSessionMessagesAsync(string chatSessionId)
         {
 
             //Get the chat messages for a chat session
@@ -129,17 +141,16 @@ namespace cosmosdb_chatgpt.Services
                 .WithParameter("@ChatSessionId", chatSessionId)
                 .WithParameter("@Type", "ChatMessage");
 
-            FeedIterator<ChatMessage> results = chatContainer.GetItemQueryIterator<ChatMessage>(query);
+            FeedIterator<CosmosChatMessage> results = chatContainer.GetItemQueryIterator<CosmosChatMessage>(query);
 
-            List<ChatMessage> chatMessages= new List<ChatMessage>();
+            List<CosmosChatMessage> chatMessages= new List<CosmosChatMessage>();
             
             while (results.HasMoreResults)
             {
-                FeedResponse<ChatMessage> response = await results.ReadNextAsync();
-                foreach (ChatMessage chatMessage in response)
-                {
-                    chatMessages.Add(chatMessage);
-                }
+                FeedResponse<CosmosChatMessage> response = await results.ReadNextAsync();
+
+                chatMessages.AddRange(response);
+
             }
 
             return chatMessages;

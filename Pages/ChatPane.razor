@@ -1,4 +1,5 @@
 ﻿@using cosmosdb_chatgpt.Services
+@using cosmosdb_chatgpt.Models
 @inject ChatService chatService
 @inject IJSRuntime JSRuntime
 
@@ -113,7 +114,7 @@
     public EventCallback<string> OnChatRenamed { get; set; }
 
     [Parameter]
-    public ChatSession CurrentChatSession { get; set; }
+    public CosmosChatSession CurrentChatSession { get; set; }
 
     [Parameter]
     public bool ShowHeader { get; set; }
@@ -122,8 +123,8 @@
     public EventCallback OnNavBarVisibilityUpdated { get; set; }
 	
 
-    List<ChatMessage> MessagesInChat;
-    private static event EventHandler<ChatSession> OnMessagePosted;
+    List<CosmosChatMessage> MessagesInChat;
+    private static event EventHandler<CosmosChatSession> OnMessagePosted;
     private bool LoadingComplete;
 
 	async private Task ToggleNavMenu()

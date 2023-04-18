@@ -1,4 +1,5 @@
 ﻿@using cosmosdb_chatgpt.Services
+@using cosmosdb_chatgpt.Models
 @inject ChatService chatService
 
 
@@ -79,10 +80,10 @@
 @code {
 
     [Parameter]
-    public EventCallback<ChatSession> OnChatClicked { get; set; }
+    public EventCallback<CosmosChatSession> OnChatClicked { get; set; }
 
     [Parameter]
-    public static List<ChatSession> ChatSessions { get; set; }
+    public static List<CosmosChatSession> ChatSessions { get; set; }
 
 
     [Parameter]
@@ -93,7 +94,7 @@
         await OnNavBarVisibilityUpdated.InvokeAsync();
     }
 
-    public ChatSession CurrentSession;
+    public CosmosChatSession CurrentSession;
 
     private string SessionID;
     private string PopUpText;
@@ -153,7 +154,7 @@
             if (!updateCurrentChat)
                 return;
 
-            CurrentSession = new ChatSession();
+            CurrentSession = new CosmosChatSession();
             CurrentSession.ChatSessionId = "404";
             CurrentSession.ChatSessionName = string.Empty;
 
@@ -246,7 +247,7 @@
         }
         if (CurrentSession == null || index<0)
         {
-            CurrentSession = new ChatSession();
+            CurrentSession = new CosmosChatSession();
             CurrentSession.ChatSessionId = "404";
             CurrentSession.ChatSessionName = string.Empty;
 
@@ -268,7 +269,7 @@
         if (ChatSessions == null) return 0;
 
         if (CurrentSession == null)
-           CurrentSession = new ChatSession();
+           CurrentSession = new CosmosChatSession();
 
         CurrentSession.ChatSessionId = sessionId;
         CurrentSession.ChatSessionName = sessionName;            

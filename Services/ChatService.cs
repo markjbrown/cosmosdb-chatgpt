@@ -1,10 +1,13 @@
-﻿namespace cosmosdb_chatgpt.Services
+﻿using Azure.AI.OpenAI;
+using cosmosdb_chatgpt.Models;
+
+namespace cosmosdb_chatgpt.Services
 {
     public class ChatService 
     {
 
         //All data is cached in chatSessions List object.
-        private static List<ChatSession> chatSessions;
+        private static List<CosmosChatSession> chatSessions;
 
         private readonly CosmosService cosmos;
         private readonly OpenAiService openAi;
@@ -18,11 +21,12 @@
             cosmos = new CosmosService(configuration);
             openAi = new OpenAiService(configuration);
             
+            chatSessions = new List<CosmosChatSession>();
         }
 
         
         // Returns list of chat session ids and names for left-hand nav to bind to (display ChatSessionName and ChatSessionId as hidden)
-        public async Task<List<ChatSession>> GetAllChatSessionsAsync()
+        public async Task<List<CosmosChatSession>> GetAllChatSessionsAsync()
         {
             chatSessions = await cosmos.GetChatSessionsAsync();
            
@@ -30,10 +34,10 @@
         }
 
         //Returns the chat messages to display on the main web page when the user selects a chat from the left-hand nav
-        public async Task<List<ChatMessage>> GetChatSessionMessagesAsync(string chatSessionId)
+        public async Task<List<CosmosChatMessage>> GetChatSessionMessagesAsync(string chatSessionId)
         {
 
-            List<ChatMessage> chatMessages = new List<ChatMessage>();
+            List<CosmosChatMessage> chatMessages = new List<CosmosChatMessage>();
 
             int index = chatSessions.FindIndex(s => s.ChatSessionId == chatSessionId);
             
@@ -58,7 +62,7 @@
         //User creates a new Chat Session
         public async Task CreateNewChatSessionAsync()
         {
-            ChatSession chatSession = new ChatSession();
+            CosmosChatSession chatSession = new CosmosChatSession();
 
             chatSessions.Add(chatSession);
             
@@ -93,19 +97,26 @@
         //User prompt to ask OpenAI a question
         public async Task<string> AskOpenAiAsync(string chatSessionId, string prompt)
         {
-            await AddPromptMessageAsync(chatSessionId, prompt);
+            
+            string conversation = GetChatSessionConversation(chatSessionId, prompt);
 
-            string conversation = GetChatSessionConversation(chatSessionId);
+            CosmosChatCompletion completion = await openAi.AskAsync(chatSessionId, conversation);
 
-            string response = await openAi.AskAsync(chatSessionId, conversation);
+            
+            // Add prompt and completion to the chat session message list object.
+            List<CosmosChatMessage> cosmosChatMessages = new List<CosmosChatMessage>();
+            cosmosChatMessages.Add(CreatePromptMessage(chatSessionId, completion.PromptTokens, prompt));
+            cosmosChatMessages.Add(CreateCompletionMessage(chatSessionId, completion.CompletionTokens, completion.Completion));
 
-            await AddResponseMessageAsync(chatSessionId, response);
 
-            return response;
+            //Insert into Cosmos as a Transaction
+            await cosmos.InsertChatMessagesBatchAsync(cosmosChatMessages);
+
+            return completion.Completion;
 
         }
 
-        private string GetChatSessionConversation(string chatSessionId)
+        private string GetChatSessionConversation(string chatSessionId, string prompt)
         {
             string conversation = "";
 
@@ -113,18 +124,20 @@
 
             if (chatSessions[index].Messages.Count > 0)
             {
-                List<ChatMessage> chatMessages = chatSessions[index].Messages;
+                List<CosmosChatMessage> chatMessages = chatSessions[index].Messages;
 
                 
-                foreach(ChatMessage chatMessage in chatMessages)
+                foreach(CosmosChatMessage chatMessage in chatMessages)
                 {
 
                     conversation += chatMessage.Text + "\n";
                     
                 }
 
-                if (conversation.Length > maxConversationLength)
-                    conversation = conversation.Substring(conversation.Length - maxConversationLength, maxConversationLength);
+                conversation += prompt;
+
+                if ((conversation.Length) > maxConversationLength)
+                    conversation = conversation.Substring((conversation.Length) - maxConversationLength, maxConversationLength);
 
             }
 
@@ -133,8 +146,8 @@
 
         public async Task<string> SummarizeChatSessionNameAsync(string chatSessionId, string prompt)
         {
-            prompt += "\n\n Summarize this prompt in one or two words to use as a label in a button on a web page";
-            string response = await openAi.AskAsync(chatSessionId, prompt);
+            
+            string response = await openAi.SummarizeAsync(chatSessionId, prompt);
 
             await RenameChatSessionAsync(chatSessionId, response);
 
@@ -142,29 +155,34 @@
 
         }
 
-        // Add human prompt to the chat session message list object and insert into Cosmos.
-        private async Task AddPromptMessageAsync(string chatSessionId, string text)
+
+        // Add user prompt to the chat session message list object.
+        private CosmosChatMessage CreatePromptMessage(string chatSessionId, int tokens, string text)
         {
-            ChatMessage chatMessage = new ChatMessage(chatSessionId, "Human", text);
+            CosmosChatMessage chatMessage = new CosmosChatMessage(chatSessionId, "User", tokens, text);
 
             int index = chatSessions.FindIndex(s => s.ChatSessionId == chatSessionId);
 
             chatSessions[index].AddMessage(chatMessage);
 
-            await cosmos.InsertChatMessageAsync(chatMessage);
+            return chatMessage;
+
+            //await cosmos.InsertChatMessageAsync(chatMessage);
 
         }
 
-        // Add OpenAI response to the chat session message list object and insert into Cosmos.
-        private async Task AddResponseMessageAsync(string chatSessionId, string text)
+        // Add OpenAI completion to the chat session message list object.
+        private CosmosChatMessage CreateCompletionMessage(string chatSessionId, int tokens, string text)
         {
-            ChatMessage chatMessage = new ChatMessage(chatSessionId, "AI", text);
+            CosmosChatMessage chatMessage = new CosmosChatMessage(chatSessionId, "Assistant", tokens, text);
 
             int index = chatSessions.FindIndex(s => s.ChatSessionId == chatSessionId);
 
             chatSessions[index].AddMessage(chatMessage);
 
-            await cosmos.InsertChatMessageAsync(chatMessage);
+            return chatMessage;
+
+            //await cosmos.InsertChatMessageAsync(chatMessage);
 
         }
 

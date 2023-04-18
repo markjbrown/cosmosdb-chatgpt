@@ -127,8 +127,8 @@ resource openAiAccountName_openAIModelDeployment 'Microsoft.CognitiveServices/ac
   properties: {
     model: {
       format: 'OpenAI'
-      name: 'text-davinci-003'
-      version: '1'
+      name: 'gpt-35-turbo'
+      version: '0301'
     }
     scaleSettings: {
       scaleType: 'Standard'
